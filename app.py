@@ -1,10 +1,9 @@
 from flask import Flask
 
-FLASK_APP = Flask(__name__)
-
-@FLASK_APP.route('/')
-def index():
-    return 'Web App with Python Flask!'
+app = Flask(__name__)
+@app.route('/')
+def hello():
+    return 'hello world Dev!'
 
 if __name__== "__main__":
-    FLASK_APP.run(debug=True, host='0.0.0.0', port=80)
+    app.run(debug=True, host='0.0.0.0', port=80)
