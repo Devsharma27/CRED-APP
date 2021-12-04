@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources: 
+  EC2Instance: 
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      ImageId: ami-04902260ca3d33422 
+      InstanceType: t2.micro
+      SecurityGroups:
+        - !Ref SecurityGroup  
+      KeyName: dev
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            sudo yum update -y
+            sudo yum install python3-pip git mysql -y
+            sudo git clone "https://github.com/Devsharma27/flask_test.git"
+            sudo pip3 install flask
+            cd flask_test
+            python3 app.py
+
+
+  SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'HTTP SSH access'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0  
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: 0.0.0.0/0
