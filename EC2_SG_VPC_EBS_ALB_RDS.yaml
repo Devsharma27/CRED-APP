@@ -1,0 +1,351 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create a EC2Instance Security Group S3 bucket DB subnet group and MYSQL Database"
+Parameters:
+  InstanceType:
+    Description: WebServer EC2 instance type
+    AllowedValues:
+      - t2.micro
+    Type: String
+    Default: t2.micro
+  
+  # ParameterGroup:
+  #   Type: String
+  #   Description: The name of the database parameter group created.
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      HVM64: "ami-0ff8a91507f77f867"
+      HVMG2: "ami-0a584ac55a7631c0c"
+      
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: VPC-Dev
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: VPC Internet Gateway
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway   
+      VpcId: !Ref VPC     
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: us-east-1a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Publicsubnet-1
+      VpcId: !Ref VPC
+  
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: us-east-1b
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Publicsubnet-2
+      VpcId: !Ref VPC
+  
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Route Table-1
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+
+  PubSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+ 
+  PubSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-1a
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet-1
+      VpcId: !Ref VPC
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-1b
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet-2
+      VpcId: !Ref VPC
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Route Table-2
+      VpcId: !Ref VPC
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetRouteTableAssociation3:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+ 
+  PrivateSubnetRouteTableAssociation4:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  SSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SSH Security Group 
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: SSH Security Group
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP/HTTPs acces via port 80/443 locked down to load 
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          SourceSecurityGroupId: !Ref SSHSecurityGroup
+      Tags:
+        - Key: Name
+          Value: WEB server security group
+
+  EC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      KeyName: dev
+      ImageId: !FindInMap 
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - HVM64
+      Tags: 
+        - Key: Name
+          Value: EC2-Dev
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            sudo yum update -y
+            sudo yum install httpd.x86_64 -y
+            sudo systemctl start httpd.service
+            sudo systemctl enable httpd.service
+            echo "Hello World from "> /var/www/html/index.html
+
+  EC2TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: '30'
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: '15'
+      HealthyThresholdCount: '5'
+      Matcher:
+        HttpCode: 200,302
+      Name: EC2TargetGroup
+      Port: '80'
+      Protocol: HTTP
+      # TargetGroupAttributes:
+      #   - Key: deregistration_delay.timeout_seconds
+      #     Value: '20'
+      Targets:
+        - Id: !Ref EC2Instance
+          Port: '80'
+      # - Id: !Ref EC2Instance2
+      #   Port: '80'
+      TargetType: instance
+      UnhealthyThresholdCount: '5'
+      VpcId: !Ref VPC
+
+  EBSVolume:
+    Type: AWS::EC2::Volume
+    Properties: 
+      Size: 10
+      Encrypted: false
+      AvailabilityZone: !GetAtt EC2Instance.AvailabilityZone
+      Tags:
+        - Key: Name
+          Value: Volume
+      # DeletionPolicy: Snapshot
+
+  # EBSVolume:
+  #   Type: AWS::EC2::Volume
+  #   Properties: 
+  #     Size: 8
+  #     # Encrypted: false
+  #     AvailabilityZone: !GetAtt EC2Instance.AvailabilityZone
+  #     Tags:
+  #       - Key: Name
+  #         Value: Volume
+  #     # DeletionPolicy: Snapshot
+
+  EBSMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref EC2Instance
+      VolumeId: !Ref EBSVolume
+      Device: /dev/sdh
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http/https to client host to access on port 80/443
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: ALB Security Group
+  
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: ALB-public
+      IpAddressType: ipv4
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Scheme: internet-facing
+      Subnets:  
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: Load Balancer
+
+  ApplicationLoadBalancerListenerForPort80:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref EC2TargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: "80"
+      Protocol: HTTP
+
+  RDSSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties: 
+      DBSubnetGroupDescription: "Subnet Group for mySQL database"
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: Database subnets
+
+  DBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Frontend Access - Enable EC2 to access RDS(MySQL) access via port 3306
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3306'
+          ToPort: '3306'
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VPC
+      Tags: 
+        - Key: Name
+          Value: DB Security Group 
+
+  RDSInstance:
+    Type: "AWS::RDS::DBInstance"
+    Properties:  
+      DBInstanceIdentifier: aws-dxl-database-1
+      AllocatedStorage: 100
+      DBInstanceClass: db.t2.micro
+      DBName: "Dev"
+      MasterUsername: "dev"
+      MasterUserPassword: "12345678"
+      Engine: "MySQl"
+      EngineVersion: "8.0.23"
+      PubliclyAccessible: "False"
+      Port: 3306
+      DeletionProtection: true
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VPCSecurityGroups: 
+        - !Ref DBSecurityGroup
+      # DBParameterGroupName: !Ref ParameterGroup
+      
+Outputs:
+  Cluster:
+    Description: The DB Cluster Name
+    Value: !Ref RDSInstance
+    
+  SubnetGroup:
+    Description: The db subnet group name 
+    Value: !Ref RDSSubnetGroup
