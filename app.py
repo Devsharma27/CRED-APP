@@ -1,11 +1,14 @@
 from flask import Flask
-import logging
+
+from logging.config import fileConfig
 
 app = Flask(__name__)
+
+fileConfig('logging.cfg')
+
 @app.route('/')
-def logging():
-    app.logger.error('Processing default request again and again')
-    app.logging.info("A Info Logging Message")
-    return 'hello world Dev!'
+def hello_world():
+    app.logger.info('Processing default request')
+    return 'Hello World!'
 if __name__== "__main__":
     app.run(debug=True, host='0.0.0.0', port=80)
