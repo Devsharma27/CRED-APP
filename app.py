@@ -2,9 +2,6 @@ from flask import Flask
 import logging
 
 app = Flask(__name__)
-
-logging.basicConfig(level=logging.DEBUG)
-
 @app.route('/')
 def hello():
     app.logger.error('Processing default request again and again')
