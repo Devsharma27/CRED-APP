@@ -3,7 +3,7 @@ import logging
 
 app = Flask(__name__)
 @app.route('/')
-def hello():
+def logging():
     app.logger.error('Processing default request again and again')
     app.logging.info("A Info Logging Message")
     return 'hello world Dev!'
