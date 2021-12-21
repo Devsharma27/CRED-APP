@@ -3,7 +3,7 @@ import logging
 
 app = Flask(__name__)
 
-logging.basicConfig(filename='demo.log', level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
 @app.route('/')
 def hello():
