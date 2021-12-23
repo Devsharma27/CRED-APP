@@ -1,0 +1,372 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create a EC2Instance Security Group S3 bucket DB subnet group and MYSQL Database"
+Resources:
+#creating a vpc with a Internet Gateway and a VPCGatewayAttachment
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: VPC-Dev
+
+## Internet Gateway: It allows instances with a public IP address (e.g. EC2) inside your VPC to access the internet
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: VPC Internet Gateway
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway   
+      VpcId: !Ref VPC
+
+# 2 subnets, PublicSubnet1 and PublicSubnet2 with a route table which is routed through Internet Gateway.
+## Public Subnet: This means the subnet’s traffic is routed through an internet gateway so instances in 
+# these subnets, can send their traffic directly to the internet.
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: us-east-1a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Publicsubnet-1
+      VpcId: !Ref VPC
+  
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: us-east-1b
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Publicsubnet-2
+      VpcId: !Ref VPC
+  
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Route Table-1
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+
+  PubSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+ 
+  PubSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+# 2 Private Subnets, PrivateSubnet1 and PrivateSubnet2 with a route table which is Routed through NAT Gateway to Get internet access.
+##Private Subnet: Unlike public subnets, to access web resources,
+# private subnets need to send their traffic through a NAT gateway that resides inside a public subnet.
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-1a
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet-1
+      VpcId: !Ref VPC
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-1b
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet-2
+      VpcId: !Ref VPC
+
+  EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NAT:
+    Type: AWS::EC2::NatGateway
+    DependsOn: GatewayAttachment
+    Properties:
+      AllocationId: !GetAtt EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: EC2-public
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Route Table-2
+      VpcId: !Ref VPC
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NAT
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetRouteTableAssociation3:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+      
+  PrivateSubnetRouteTableAssociation4:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+# EC2-Instance with a EC2-Targate group and EBS volume
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP/HTTPs acces via port 80/22 locked down to load 
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Securitygroupec2
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-04902260ca3d33422
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      SubnetId: !Ref PublicSubnet1
+      IamInstanceProfile: ec2role
+      KeyName: dev
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            sudo su
+            yum update -y
+            yum install python3-pip git -y
+            sudo git clone "https://github.com/Devsharma27/flask_test.git"
+            pip3 install flask
+            cd flask_test
+            python3 app.py
+      Tags:
+        - Key: Name
+          Value : EC2-Dev      
+      
+  EC2TargetGroupP:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 15
+      HealthyThresholdCount: 5
+      Matcher:
+        HttpCode: '200'
+      Name: EC2TargetGroupP
+      Port: 80
+      Protocol: HTTP
+      TargetGroupAttributes:
+      - Key: deregistration_delay.timeout_seconds
+        Value: '20'
+      - Key: "load_balancing.algorithm.type"
+        Value: "round_robin"
+      Targets:
+      - Id: !Ref EC2Instance
+        Port: 80
+      UnhealthyThresholdCount: 3
+      VpcId: !Ref VPC
+
+# Creating a S3 Bucket
+  
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn:
+      - EC2Instance
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: AWS-S3-Bucket
+          Value: Bucket
+
+# LOADBALANCER SECURITY GP LOADBALANCER V2 WITH LISTENER FOR PORT 80
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ELB Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: ALB Security Group
+  
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref EC2TargetGroupP
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+      - !Ref PublicSubnet1
+      - !Ref PublicSubnet2
+      SecurityGroups:
+        - !GetAtt ALBSecurityGroup.GroupId
+
+# Creating a RDS Instance and a Database Subnet Group and DB Security Group
+  RDSSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties: 
+      DBSubnetGroupDescription: "Subnet Group for mySQL database"
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: Database subnets
+
+  DBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Frontend Access - Enable EC2 to access RDS(MySQL) access via port 3306
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3306'
+          ToPort: '3306'
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VPC
+      Tags: 
+        - Key: Name
+          Value: DB Security Group 
+
+  RDSInstance:
+    Type: "AWS::RDS::DBInstance"
+    Properties:  
+      DBInstanceIdentifier: aws-dxl-database-1
+      AllocatedStorage: 100
+      DBInstanceClass: db.t2.micro
+      DBName: "Dev"
+      MasterUsername: "dev"
+      MasterUserPassword: "12345678"
+      Engine: "MySQl"
+      EngineVersion: "8.0.23"
+      PubliclyAccessible: "False"
+      Port: 3306
+      DeletionProtection: true
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VPCSecurityGroups: 
+        - !Ref DBSecurityGroup
+
+# SNS Topic 
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+
+  SNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: Dev.sharma8989@gmail.com
+      Protocol: email
+      TopicArn: !Ref SNSTopic
+
+  CWAlramCPU:
+    Type: AWS::CloudWatch::Alarm
+    Properties: 
+      ActionsEnabled: true
+      AlarmActions: 
+      - !Ref SNSTopic
+      OKActions: 
+      - !Ref SNSTopic
+      AlarmDescription: Alart if cpu touches 30%
+      AlarmName: Dev-Alram
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: '1'
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Period: '60'
+      Statistic: Average
+      Threshold: '30'
+      Dimensions:
+      - Name: EC2Instance
+        Value: !Ref EC2Instance
+      - Name: RDSInstance
+        Value: !Ref RDSInstance
+
+  CWAlramMemory:
+    Type: AWS::CloudWatch::Alarm
+    Properties: 
+      ActionsEnabled: true
+      AlarmActions: 
+      - !Ref SNSTopic
+      OKActions: 
+      - !Ref SNSTopic
+      AlarmDescription: Alart if cpu touches 30%
+      AlarmName: dev2-Alram
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: '1'
+      MetricName: "mem_used_percent"
+      Namespace: AWS/EC2
+      Period: '60'
+      Statistic: Average
+      Threshold: '30'
+      Dimensions:
+      - Name: EC2Instance
+        Value: !Ref EC2Instance
+      - Name: RDSInstance
+        Value: !Ref RDSInstance
