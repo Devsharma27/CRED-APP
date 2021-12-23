@@ -220,13 +220,13 @@ Resources:
         Fn::Base64:
           !Sub |
             #!/bin/bash
-            sudo yum update -y
-            sudo yum install python3-pip git mysql -y
+            sudo su
+            yum update -y
+            yum install python3-pip git -y
             sudo git clone "https://github.com/Devsharma27/flask_test.git"
-            sudo pip3 install flask
+            pip3 install flask
             cd flask_test
             python3 app.py
-
   EC2TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
