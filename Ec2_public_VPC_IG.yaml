@@ -263,17 +263,3 @@ Resources:
       LoadBalancerArn: !Ref ApplicationLoadBalancer
       Port: "80"
       Protocol: HTTP
-
-  DBSecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
-    Properties:
-      GroupDescription: Frontend Access - Enable EC2 to access RDS(MySQL) access via port 3306
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: '3306'
-          ToPort: '3306'
-          CidrIp: 0.0.0.0/0
-      VpcId: !Ref VPC
-      Tags: 
-        - Key: Name
-          Value: DB Security Group        
